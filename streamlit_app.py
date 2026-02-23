@@ -1,7 +1,7 @@
 # streamlit_app.py
 # -*- coding: utf-8 -*-
 """
-Streamlit 互動式散點圖（白底介面 + 層級篩選）：
+Streamlit 互動式散點圖（黑底介面 + 層級篩選，圖表白底）：
 - 讀取 Excel 的「篩選結果」工作表
 - 計算「2025成長率」 = (2025 - 2024) / 2024
 - 依層級篩選：類型 -> 區 -> 縣市（高層篩選會影響低層選項）
@@ -19,15 +19,17 @@ DEFAULT_FILE = "商場年業績表_含成長率.xlsx"
 DEFAULT_SHEET = "篩選結果"
 
 
-def _inject_white_theme():
-    # 強制白底 + 黑字（包含 sidebar）
+def _inject_dark_theme():
+    # 強制黑底 + 白字（包含 sidebar）；圖表底色另外在 Altair 設為白底
     st.markdown(
         """
         <style>
-        .stApp { background-color: #ffffff; color: #000000; }
-        section[data-testid="stSidebar"] { background-color: #ffffff; color: #000000; }
-        section[data-testid="stSidebar"] * { color: #000000 !important; }
-        .stMarkdown, .stText, .stCaption, .stMetric, .stDataFrame, .stTable { color: #000000; }
+        .stApp { background-color: #0e1117; color: #ffffff; }
+        section[data-testid="stSidebar"] { background-color: #0e1117; color: #ffffff; }
+        section[data-testid="stSidebar"] * { color: #ffffff !important; }
+        .stMarkdown, .stText, .stCaption, .stMetric, .stDataFrame, .stTable { color: #ffffff; }
+        /* Dataframe header text a bit brighter */
+        div[data-testid="stDataFrame"] * { color: #ffffff; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -69,7 +71,7 @@ def to_percent_str(x, digits=2):
 
 def main():
     st.set_page_config(page_title="商場業績分析", layout="wide")
-    _inject_white_theme()
+    _inject_dark_theme()
 
     st.title("商場業績分析：2025成長率 vs 2025業績")
 
@@ -171,6 +173,7 @@ def main():
             .encode(
                 x=alt.X("2025成長率:Q", axis=alt.Axis(title="2025成長率", format="%")),
                 y=alt.Y("2025:Q", axis=alt.Axis(title="2025業績")),
+                color=alt.Color("商場名稱:N", legend=None),
                 tooltip=tooltips,
             )
         )
