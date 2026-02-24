@@ -328,9 +328,10 @@ def main():
     )
 
     # axis formatting
-    fig.update_xaxes(tickformat=".0%")
     fig.update_layout(
-        template="plotly_white",  # white chart background
+        template="plotly_white",
+        plot_bgcolor="white",  # ← 圖內繪圖區
+        paper_bgcolor="white",  # ← 整張圖外框背景
         hovermode="closest",
         height=850,
         legend_title_text="商場名稱",
