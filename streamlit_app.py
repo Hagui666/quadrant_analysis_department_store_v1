@@ -347,17 +347,39 @@ def main():
     # axis formatting
     fig.update_xaxes(tickformat=".0%")
     fig.update_layout(
-        template="plotly_white",  # white chart background
-        hovermode="closest",
-        height=850,
-        legend_title_text="商場名稱(體系)",
+        template="plotly_white",
+
+        # ⭐ 強制整張圖白底
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+
+        # ⭐ 強制所有字黑色
         font=dict(color="black"),
+
         legend=dict(
             title=dict(font=dict(color="black")),
             font=dict(color="black", size=10),
             traceorder="normal"
         ),
+
+        hovermode="closest",
+        height=850,
         margin=dict(l=40, r=260, t=70, b=40),
+    )
+
+    fig.update_xaxes(
+        tickformat=".0%",
+        showgrid=False,
+        title_font=dict(color="black"),
+        tickfont=dict(color="black"),
+        linecolor="black",
+    )
+
+    fig.update_yaxes(
+        showgrid=False,
+        title_font=dict(color="black"),
+        tickfont=dict(color="black"),
+        linecolor="black",
     )
 
     # Labels style
