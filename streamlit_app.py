@@ -13,6 +13,7 @@ Streamlit 互動式散點圖（黑底介面、圖表白底）：
 - 點位標籤（按鈕切換顯示）：商場名稱(體系)
 - Tooltip：顯示該點所有欄位；數字欄位千分位+2位小數；成長率以百分比
 - 表格：成長率欄位以百分比字串呈現
+- 象限分割線：可選 平均/中位數/自定義（虛線 + 顯示分界值）
 """
 
 from __future__ import annotations
@@ -101,11 +102,32 @@ def build_label(row) -> str:
     return name or sys
 
 
+def compute_cut_lines(df_plot: pd.DataFrame, mode: str, custom_x: float | None, custom_y: float | None) -> tuple[float | None, float | None]:
+    """
+    mode: "平均值" | "中位數" | "自定義"
+    回傳 (x_cut, y_cut)，其中 x_cut 是成長率(小數)，y_cut 是 2025 業績(數值)
+    """
+    if df_plot is None or len(df_plot) == 0:
+        return None, None
+
+    if mode == "平均值":
+        x_cut = float(df_plot["2025成長率"].mean(skipna=True))
+        y_cut = float(df_plot["2025"].mean(skipna=True))
+        return x_cut, y_cut
+
+    if mode == "中位數":
+        x_cut = float(df_plot["2025成長率"].median(skipna=True))
+        y_cut = float(df_plot["2025"].median(skipna=True))
+        return x_cut, y_cut
+
+    # 自定義
+    return custom_x, custom_y
+
+
 def main():
     st.set_page_config(page_title="商場業績分析", layout="wide")
     _inject_dark_theme()
 
-    # Header
     st.markdown("## 商場業績分析")
     st.markdown("**散點圖：2025成長率（%） vs 2025業績**")
 
@@ -167,6 +189,7 @@ def main():
     selected_cities = st.sidebar.multiselect("縣市", options=city_options, default=city_options)
     df_filtered = df_f2[df_f2["縣市"].isin(selected_cities)] if selected_cities else df_f2.iloc[0:0]
 
+    # === 顯示選項 ===
     st.sidebar.markdown("---")
     st.sidebar.header("顯示選項")
     only_valid = st.sidebar.checkbox(
@@ -177,9 +200,41 @@ def main():
     valid_mask = df_filtered["2024"].notna() & df_filtered["2025"].notna() & (df_filtered["2024"] != 0)
     df_plot = df_filtered[valid_mask].copy() if only_valid else df_filtered.copy()
 
-    # 建立標籤欄位：商場名稱(體系)
     if len(df_plot):
         df_plot["標籤"] = df_plot.apply(build_label, axis=1)
+
+    # === 象限切分設定 ===
+    st.sidebar.markdown("---")
+    st.sidebar.header("象限切分")
+    split_mode = st.sidebar.radio("切分方式", ["平均值", "中位數", "自定義"], index=0)
+
+    # 自定義切分值：固定套用，不隨篩選變動（使用 session_state 保存）
+    if "custom_growth_pct" not in st.session_state:
+        st.session_state["custom_growth_pct"] = 0.0
+    if "custom_2025" not in st.session_state:
+        st.session_state["custom_2025"] = 0.0
+
+    custom_x = None
+    custom_y = None
+    if split_mode == "自定義":
+        st.sidebar.caption("自定義切分值會固定套用在所有篩選情境")
+        st.session_state["custom_growth_pct"] = st.sidebar.number_input(
+            "成長率分界（%）",
+            value=float(st.session_state["custom_growth_pct"]),
+            step=1.0,
+            format="%.2f",
+            help="例如輸入 10 代表 10%",
+        )
+        st.session_state["custom_2025"] = st.sidebar.number_input(
+            "2025業績分界",
+            value=float(st.session_state["custom_2025"]),
+            step=1000.0,
+            format="%.2f",
+        )
+        custom_x = float(st.session_state["custom_growth_pct"]) / 100.0
+        custom_y = float(st.session_state["custom_2025"])
+
+    x_cut, y_cut = compute_cut_lines(df_plot, split_mode, custom_x, custom_y)
 
     # === 指標 ===
     c1, c2, c3 = st.columns(3)
@@ -230,7 +285,6 @@ def main():
                         "2025:Q",
                         axis=alt.Axis(title="2025業績", grid=False, labelColor="black", titleColor="black"),
                     ),
-                    # 顏色以商場名稱分類
                     color=alt.Color("商場名稱:N", legend=None),
                     tooltip=tooltips,
                 )
@@ -238,13 +292,46 @@ def main():
 
             chart = base
 
+            # === 象限線（虛線）+ 分界值標示 ===
+            if x_cut is not None and y_cut is not None:
+                x_min = float(df_plot["2025成長率"].min(skipna=True))
+                x_max = float(df_plot["2025成長率"].max(skipna=True))
+                y_min = float(df_plot["2025"].min(skipna=True))
+                y_max = float(df_plot["2025"].max(skipna=True))
+
+                # 視覺留白，讓標籤不貼邊
+                pad_x = (x_max - x_min) * 0.03 if x_max > x_min else 0.03
+                pad_y = (y_max - y_min) * 0.03 if y_max > y_min else 1.0
+
+                vline_df = pd.DataFrame({"x": [x_cut]})
+                hline_df = pd.DataFrame({"y": [y_cut]})
+
+                # 分界值標籤：放在底部與左側
+                label_df = pd.DataFrame(
+                    {
+                        "x": [x_cut, x_min + pad_x],
+                        "y": [y_min + pad_y, y_cut],
+                        "text": [f"{x_cut:.2%}", f"{y_cut:,.2f}"],
+                    }
+                )
+
+                vline = alt.Chart(vline_df).mark_rule(strokeDash=[6, 6], color="black").encode(x="x:Q")
+                hline = alt.Chart(hline_df).mark_rule(strokeDash=[6, 6], color="black").encode(y="y:Q")
+
+                labels = alt.Chart(label_df).mark_text(color="black", fontSize=12, dy=-6, align="left").encode(
+                    x="x:Q", y="y:Q", text="text:N"
+                )
+
+                chart = chart + vline + hline + labels
+
+            # 點名標籤
             if st.session_state["show_labels"]:
-                labels = (
+                point_labels = (
                     alt.Chart(df_plot)
                     .mark_text(align="left", dx=7, dy=-7, color="black", fontSize=11)
                     .encode(x="2025成長率:Q", y="2025:Q", text="標籤:N")
                 )
-                chart = base + labels
+                chart = chart + point_labels
 
             chart = (
                 chart.properties(height=560)
