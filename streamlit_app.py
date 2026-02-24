@@ -9,7 +9,7 @@
 - 計算：2025成長率 = (2025 - 2024) / 2024
 - 篩選：類型 -> 區 -> 縣市（連動）
 - 象限切分：平均值 / 中位數 / 自定義（自定義固定套用所有篩選情境）
-- 圖表：散點圖（白底），顏色=商場名稱；支援下載圖檔
+- 圖表：散點圖（白底），顏色=縣市（固定顏色、不因篩選變動）；支援下載圖檔
 - 圖表下方：
   1) 四象限統計表（象限分類 / 象限定義 / 商場數量）
   2) 明細表（含象限欄位）
@@ -40,6 +40,7 @@ SYS_COL = "體系"
 COL_2024 = "2024"
 COL_2025 = "2025"
 GROWTH_COL = "2025成長率"  # internal numeric ratio (0.12 = 12%)
+
 
 # =========================
 # Theme (dark app)
@@ -151,6 +152,18 @@ def assign_quadrant(df_plot: pd.DataFrame, x_cut: float, y_cut: float) -> pd.Ser
     return pd.Series(np.select(conds, labels, default="未分類"), index=df_plot.index)
 
 
+def build_fixed_city_palette(city_order: list[str]) -> dict[str, str]:
+    """依 city_order 建立固定顏色映射（同城市永遠同顏色）"""
+    palette = (
+        px.colors.qualitative.Plotly
+        + px.colors.qualitative.D3
+        + px.colors.qualitative.Set3
+        + px.colors.qualitative.Dark24
+        + px.colors.qualitative.Light24
+    )
+    return {c: palette[i % len(palette)] for i, c in enumerate(city_order)}
+
+
 def main():
     st.set_page_config(page_title="商場年業績象限分析", layout="wide")
     inject_dark_theme()
@@ -202,6 +215,26 @@ def main():
     # 計算成長率（ratio）
     df[GROWTH_COL] = (df[COL_2025] - df[COL_2024]) / df[COL_2024]
     df.loc[df[COL_2024] == 0, GROWTH_COL] = np.nan
+
+    # =========================
+    # 固定顏色 & 圖例排序（以「全資料」的縣市為準，不因篩選變動）
+    # =========================
+    all_cities = sorted(df[CITY_COL].dropna().astype(str).unique().tolist())
+
+    # 自訂縣市排序（可選）：若想固定特定順序，把 None 改成你的 list
+    custom_city_order = None  # e.g. ["台北市","新北市",...]
+    city_order = custom_city_order if custom_city_order else all_cities
+
+    # 固定顏色映射：存入 session_state，避免因 rerun 改色
+    if "city_color_map" not in st.session_state:
+        st.session_state["city_color_map"] = build_fixed_city_palette(city_order)
+    else:
+        # 若資料來源換檔帶來新縣市，補色但不改舊色
+        color_map = dict(st.session_state["city_color_map"])
+        for c in city_order:
+            if c not in color_map:
+                color_map.update(build_fixed_city_palette([c]))
+        st.session_state["city_color_map"] = color_map
 
     # =========================
     # Sidebar: filters (linked)
@@ -288,7 +321,7 @@ def main():
 
     show_labels = st.sidebar.toggle("顯示資料標籤（商場名稱(體系)）", value=False)
 
-    # label field
+    # label field (for point labels)
     fdf["_label"] = (
         fdf[NAME_COL].astype(str).fillna("").str.strip()
         + "("
@@ -296,39 +329,26 @@ def main():
         + ")"
     )
 
-    # Legend label: 商場名稱(體系)（用於圖例顯示 & 顏色分類）
-    fdf["_legend_label"] = fdf["_label"]
-
-    # 依「體系」排序圖例（同體系再依商場名稱）
-    _legend_order = (
-        fdf[[SYS_COL, "_legend_label"]]
-        .fillna("")
-        .drop_duplicates()
-        .sort_values([SYS_COL, "_legend_label"])
-    )
-    legend_order = _legend_order["_legend_label"].tolist()
-
-
-        # Hover：顯示所有原始欄位（隱藏內部輔助欄位，避免干擾）
+    # Hover：顯示所有原始欄位（隱藏內部輔助欄位，避免干擾）
     hover_cols = {col: True for col in fdf.columns}
-    for _hide in ["_label", "_legend_label", "_growth_pct"]:
+    for _hide in ["_label"]:
         if _hide in hover_cols:
             hover_cols[_hide] = False
-
 
     fig = px.scatter(
         fdf,
         x=GROWTH_COL,
         y=COL_2025,
-        color="_legend_label",  # 顏色=商場名稱(體系)
+        color=CITY_COL,  # ⭐ 顏色=縣市（圖例也會跟著變）
         text="_label" if show_labels else None,
         hover_data=hover_cols,
-        labels={GROWTH_COL: "2025成長率", COL_2025: "2025業績"},
-        title=f"散點圖（{split_mode}分界｜顏色=商場名稱(體系)）",
-        category_orders={"_legend_label": legend_order},
+        labels={GROWTH_COL: "2025成長率", COL_2025: "2025業績", CITY_COL: "縣市"},
+        title=f"散點圖（{split_mode}分界｜顏色=縣市）",
+        category_orders={CITY_COL: city_order},  # ⭐ 圖例依縣市排序
+        color_discrete_map=st.session_state["city_color_map"],  # ⭐ 固定縣市顏色
     )
 
-    # quadrant lines with annotations placed away from points (like your reference program)
+    # quadrant lines
     fig.add_vline(
         x=x_cut,
         line_dash="dash",
@@ -344,24 +364,17 @@ def main():
         annotation_position="bottom right",
     )
 
-    # axis formatting
-    fig.update_xaxes(tickformat=".0%")
+    # Enforce white chart + black text (avoid CSS interference)
     fig.update_layout(
         template="plotly_white",
-
-        # ⭐ 強制整張圖白底
         paper_bgcolor="white",
         plot_bgcolor="white",
-
-        # ⭐ 強制所有字黑色
         font=dict(color="black"),
-
         legend=dict(
-            title=dict(font=dict(color="black")),
+            title=dict(text="縣市", font=dict(color="black")),
             font=dict(color="black", size=10),
-            traceorder="normal"
+            traceorder="normal",
         ),
-
         hovermode="closest",
         height=850,
         margin=dict(l=40, r=260, t=70, b=40),
@@ -374,7 +387,6 @@ def main():
         tickfont=dict(color="black"),
         linecolor="black",
     )
-
     fig.update_yaxes(
         showgrid=False,
         title_font=dict(color="black"),
@@ -382,8 +394,8 @@ def main():
         linecolor="black",
     )
 
-    # Labels style
-    # text labels readable on white chart
+    # Bigger dots + readable labels
+    fig.update_traces(marker=dict(size=12))
     fig.update_traces(textfont=dict(color="black"))
 
     if show_labels:
@@ -437,13 +449,11 @@ def main():
     # =========================
     st.subheader("篩選後商場明細（含象限）")
 
-    # Show common columns first, then the rest
     prefer_cols = [
         TYPE_COL, SYS_COL, NAME_COL, AREA_COL, CITY_COL,
         "行政區", "地址", COL_2024, COL_2025, GROWTH_COL, "象限"
     ]
     cols_exist = [c for c in prefer_cols if c in fdf.columns]
-    # growth formatted display in table
     df_table = fdf[cols_exist].copy()
     if GROWTH_COL in df_table.columns:
         df_table[GROWTH_COL] = df_table[GROWTH_COL].map(lambda v: "" if pd.isna(v) else f"{v:.2%}")
