@@ -330,13 +330,38 @@ def main():
     # axis formatting
     fig.update_layout(
         template="plotly_white",
-        plot_bgcolor="white",  # ← 圖內繪圖區
-        paper_bgcolor="white",  # ← 整張圖外框背景
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+
+        # ⭐ 全域字體顏色
+        font=dict(color="black"),
+
+        # ⭐ 圖例
+        legend=dict(
+            title=dict(font=dict(color="black")),
+            font=dict(color="black")
+        ),
+
         hovermode="closest",
         height=850,
-        legend_title_text="商場名稱",
         margin=dict(l=30, r=30, t=60, b=30),
     )
+
+    fig.update_xaxes(
+        tickformat=".0%",
+        showgrid=False,
+        title_font=dict(color="black"),
+        tickfont=dict(color="black")
+    )
+
+    fig.update_yaxes(
+        showgrid=False,
+        title_font=dict(color="black"),
+        tickfont=dict(color="black")
+    )
+
+    fig.update_traces(textfont=dict(color="black"))
+
 
     # Labels style
     if show_labels:
