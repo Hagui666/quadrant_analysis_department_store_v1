@@ -296,19 +296,36 @@ def main():
         + ")"
     )
 
+    # Legend label: 商場名稱(體系)（用於圖例顯示 & 顏色分類）
+    fdf["_legend_label"] = fdf["_label"]
+
+    # 依「體系」排序圖例（同體系再依商場名稱）
+    _legend_order = (
+        fdf[[SYS_COL, "_legend_label"]]
+        .fillna("")
+        .drop_duplicates()
+        .sort_values([SYS_COL, "_legend_label"])
+    )
+    legend_order = _legend_order["_legend_label"].tolist()
+
+
+        # Hover：顯示所有原始欄位（隱藏內部輔助欄位，避免干擾）
     hover_cols = {col: True for col in fdf.columns}
-    # plotly hover shows raw ratios; also include formatted columns
-    fdf["_growth_pct"] = fdf[GROWTH_COL]  # keep numeric for hover formatting via hovertemplate? We'll keep simple.
+    for _hide in ["_label", "_legend_label", "_growth_pct"]:
+        if _hide in hover_cols:
+            hover_cols[_hide] = False
+
 
     fig = px.scatter(
         fdf,
         x=GROWTH_COL,
         y=COL_2025,
-        color=NAME_COL,  # 顏色=商場名稱
+        color="_legend_label",  # 顏色=商場名稱(體系)
         text="_label" if show_labels else None,
         hover_data=hover_cols,
         labels={GROWTH_COL: "2025成長率", COL_2025: "2025業績"},
-        title=f"散點圖（{split_mode}分界｜顏色=商場名稱）",
+        title=f"散點圖（{split_mode}分界｜顏色=商場名稱(體系)）",
+        category_orders={"_legend_label": legend_order},
     )
 
     # quadrant lines with annotations placed away from points (like your reference program)
@@ -328,42 +345,25 @@ def main():
     )
 
     # axis formatting
+    fig.update_xaxes(tickformat=".0%")
     fig.update_layout(
-        template="plotly_white",
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-
-        # ⭐ 全域字體顏色
-        font=dict(color="black"),
-
-        # ⭐ 圖例
-        legend=dict(
-            title=dict(font=dict(color="black")),
-            font=dict(color="black")
-        ),
-
+        template="plotly_white",  # white chart background
         hovermode="closest",
         height=850,
-        margin=dict(l=30, r=30, t=60, b=30),
+        legend_title_text="商場名稱(體系)",
+        font=dict(color="black"),
+        legend=dict(
+            title=dict(font=dict(color="black")),
+            font=dict(color="black", size=10),
+            traceorder="normal"
+        ),
+        margin=dict(l=40, r=260, t=70, b=40),
     )
-
-    fig.update_xaxes(
-        tickformat=".0%",
-        showgrid=False,
-        title_font=dict(color="black"),
-        tickfont=dict(color="black")
-    )
-
-    fig.update_yaxes(
-        showgrid=False,
-        title_font=dict(color="black"),
-        tickfont=dict(color="black")
-    )
-
-    fig.update_traces(textfont=dict(color="black"))
-
 
     # Labels style
+    # text labels readable on white chart
+    fig.update_traces(textfont=dict(color="black"))
+
     if show_labels:
         fig.update_traces(mode="markers+text", textposition="top center")
     else:
